@@ -1,0 +1,21 @@
+# The image needs the application and nothing else. Screenshots, tests and git
+# history would only make it bigger and force a rebuild on every doc edit.
+.git
+.github
+docs
+tests
+deploy
+build
+dist
+*.md
+Dockerfile
+docker-compose.yml
+__pycache__
+*.pyc
+.venv
+il2_name_cache.json
+dcs_clsid_names.json
+dcs_map_cache
+il2_map_cache
+user_settings.json
+*.log

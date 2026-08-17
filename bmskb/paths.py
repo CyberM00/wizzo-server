@@ -23,7 +23,15 @@ FROZEN = bool(getattr(sys, "frozen", False))
 
 # Deliberately not the project's display name: this folder outlives any rename,
 # and moving it would silently orphan a user's settings.
-STATE_DIRNAME = "Wizzo"
+#
+# Distinct from the desktop build's "Wizzo", because the two are expected to be
+# installed on the same machine and sharing one settings file would mean two
+# processes writing it. The cost is entering the game folders once per build.
+STATE_DIRNAME = "WizzoServer"
+
+#: Set this to put settings, caches and logs somewhere specific. A container
+#: mounts a volume here; a service account points it at somewhere it can write.
+STATE_DIR_ENV = "WIZZO_STATE_DIR"
 
 
 def resource_root() -> Path:
@@ -36,7 +44,17 @@ def resource_root() -> Path:
 
 
 def state_root() -> Path:
-    """A folder the board may write to, whatever it was installed into."""
+    """A folder the board may write to, whatever it was installed into.
+
+    An explicit override wins over everything, which matters more here than on
+    the desktop. Run from a source checkout the fallback is the checkout itself,
+    and a server is often started from a read-only bind mount, a copy owned by
+    another user, or an image layer that does not survive a restart. Writing the
+    map cache into any of those either fails or throws the cache away nightly.
+    """
+    explicit = os.environ.get(STATE_DIR_ENV, "").strip()
+    if explicit:
+        return Path(explicit).expanduser()
     if not FROZEN:
         return Path(__file__).resolve().parent.parent
     base = os.environ.get("LOCALAPPDATA") or os.environ.get("XDG_STATE_HOME")
@@ -65,6 +83,7 @@ def app_root() -> Path:
 def describe() -> dict:
     return {
         "frozen": FROZEN,
+        "state_override": os.environ.get(STATE_DIR_ENV, ""),
         "resources": str(resource_root()),
         "state": str(state_root()),
         "app": str(app_root()),

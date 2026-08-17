@@ -1,0 +1,49 @@
+# A systemd unit for running the board on a Linux box that can see the game
+# folders, usually over a mount.
+#
+#   sudo cp deploy/wizzo-server.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now wizzo-server
+#   journalctl -u wizzo-server -f
+#
+# Adjust User, WorkingDirectory and the three paths. The board logs to stdout,
+# which journalctl collects, so there is no log file to rotate.
+
+[Unit]
+Description=Wizzo Server, a kneeboard for BMS, DCS and IL-2
+Documentation=https://github.com/CyberM00/wizzo-server
+After=network-online.target
+# The game folders are usually a mount. Starting before it is there means the
+# board decides nothing is installed and caches that conclusion for the session.
+Wants=network-online.target remote-fs.target
+After=remote-fs.target
+
+[Service]
+Type=simple
+User=wizzo
+Group=wizzo
+WorkingDirectory=/opt/wizzo-server
+
+Environment=WIZZO_STATE_DIR=/var/lib/wizzo-server
+Environment=BMS_PATH=/mnt/games/bms
+Environment=DCS_PATH=/mnt/games/dcs
+Environment=IL2_PATH=/mnt/games/il2
+
+# --no-update because a service should be updated by whatever manages the
+# checkout, not by the process rewriting its own files while running.
+ExecStart=/opt/wizzo-server/.venv/bin/python wizzo.py --host 0.0.0.0 --port 5000 --no-update
+
+Restart=on-failure
+RestartSec=5
+
+# It only ever reads game files and writes its own state, so it needs very
+# little. If any of this stops it starting, loosen it rather than guessing.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+StateDirectory=wizzo-server
+ReadWritePaths=/var/lib/wizzo-server
+
+[Install]
+WantedBy=multi-user.target

@@ -345,13 +345,19 @@ def test_no_em_dashes_anywhere():
         "&" + "ndash;": "an en-dash HTML entity",
     }
     exts = {".py", ".md", ".js", ".css", ".html", ".txt", ".yml", ".yaml",
-            ".toml", ".bat", ".ps1", ".json", ".cfg"}
+            ".toml", ".bat", ".ps1", ".json", ".cfg", ".service"}
+    # Deployment files that carry no extension at all. Without these the guard
+    # would walk straight past the Dockerfile, which is as user-facing as the
+    # README: people read it to work out what to mount.
+    named = {"Dockerfile", ".gitignore", ".gitattributes", ".dockerignore"}
     skip_dirs = {".git", "build", "dist", "__pycache__", ".venv", "node_modules"}
 
     root = Path(__file__).resolve().parent.parent
     offenders = []
     for path in root.rglob("*"):
-        if not path.is_file() or path.suffix.lower() not in exts:
+        if not path.is_file():
+            continue
+        if path.suffix.lower() not in exts and path.name not in named:
             continue
         if any(part in skip_dirs for part in path.relative_to(root).parts):
             continue

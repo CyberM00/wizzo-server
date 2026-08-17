@@ -1,0 +1,35 @@
+# Edit the three paths under volumes to wherever the container can see your
+# games, then:
+#
+#     docker compose up -d
+#
+# Mount only the sims you have. A path that is not mounted is simply not found,
+# and the sim chooser says so rather than failing.
+
+services:
+  wizzo:
+    build: .
+    image: wizzo-server:latest
+    container_name: wizzo-server
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      # These point at the mount points below, not at host paths. The board
+      # verifies each one looks like the sim it claims to be before using it.
+      BMS_PATH: /games/bms
+      DCS_PATH: /games/dcs
+      IL2_PATH: /games/il2
+    volumes:
+      # Read-only on purpose. The board only ever reads; mounting the games
+      # writable would give it the power to damage an install it has no reason
+      # to touch. Change the left side of each line, not the right.
+      - /srv/games/Falcon BMS 4.38:/games/bms:ro
+      - /srv/games/DCS World:/games/dcs:ro
+      - /srv/games/IL-2 Sturmovik Great Battles:/games/il2:ro
+      # Settings and the terrain-chart cache. Keep this so the cache survives a
+      # restart; the first chart for a theatre takes a while to build.
+      - wizzo-state:/state
+
+volumes:
+  wizzo-state:

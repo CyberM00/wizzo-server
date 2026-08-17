@@ -1,0 +1,75 @@
+name: Test
+
+# The desktop build has to prove a packaged executable runs. This one has to
+# prove something different: that it serves on a machine with no games installed
+# and no desktop session, on both operating systems anyone would run it on. That
+# is the state every new user starts in.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        # Windows because that is where the games are. Linux because that is
+        # where a box that runs this as a service usually is.
+        os: [windows-latest, ubuntu-latest]
+        # Both ends of the range the README promises.
+        python-version: ["3.10", "3.13"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "${{ matrix.python-version }}"
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Test
+        # The tests that need a game installed skip here, which is the point:
+        # the rest are the ones that catch an edit breaking the logic.
+        run: python -m pytest tests/ -v
+
+      - name: Check it serves with no games and no display
+        # No DISPLAY on the Linux runner, which is the useful part: it proves
+        # nothing in the import graph still reaches for a GUI toolkit.
+        run: python .github/check_serves.py
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build the image
+        run: docker build -t wizzo-server:ci .
+
+      - name: Check the image serves
+        # Started with no game folders mounted, so this is the empty state again,
+        # this time through the container's own entrypoint.
+        run: |
+          docker run -d --name wizzo -p 5000:5000 wizzo-server:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:5000/api/paths > /dev/null 2>&1; then
+              echo "served /api/paths"
+              curl -fsS http://127.0.0.1:5000/ | grep -q Wizzo && echo "served the page"
+              docker rm -f wizzo > /dev/null
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "the container never answered:"
+          docker logs wizzo
+          docker rm -f wizzo > /dev/null
+          exit 1

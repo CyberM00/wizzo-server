@@ -1,12 +1,24 @@
-# Wizzo
+# Wizzo Server
 
-A second-monitor kneeboard for **Falcon BMS**, **DCS World** and **IL-2 Sturmovik:
-Great Battles**. It reads what the sim already writes, pulls in the matching
-charts, and turns your loadout into an employment reference -- automatically, every
-time you take a new mission.
+A kneeboard for **Falcon BMS**, **DCS World** and **IL-2 Sturmovik: Great
+Battles** that runs as a plain HTTP server. Start it on the machine the games are
+installed on, then read the board on whatever you actually want it on: a tablet
+strapped to your leg, a phone, a second PC, the laptop beside the stick.
 
-Named after the WSO -- the one in the back seat working the charts, the nav and
-the stores while you fly.
+It reads what the sim already writes, pulls in the matching charts, and turns your
+loadout into an employment reference -- automatically, every time you take a new
+mission.
+
+> ### Looking for the desktop app?
+>
+> **[Wizzo](https://github.com/CyberM00/wizzo)** is the same board packaged as a
+> Windows application: download a zip, run `Wizzo.exe`, and it opens in its own
+> window with no Python and no console. If you fly on one machine and read the
+> board on that same machine's second monitor, that is the one you want.
+>
+> This build exists for the other case. It has no window, no installer and no
+> desktop dependencies, and it is happy running headless on a box you never look
+> at directly. Both read the same files and show the same pages.
 
 ![The mission brief](docs/brief.png)
 
@@ -19,9 +31,6 @@ the stores while you fly.
 
 *DCS's own aeronautical chart for the terrain, cropped to the mission, with the
 route, numbered waypoints, airfields and bullseye drawn on it.*
-
-Runs as a small local web server, so the same board also opens on a tablet or
-phone over your LAN.
 
 ## Which sim it shows
 
@@ -43,46 +52,8 @@ exactly what carries over.
 
 ## Running it
 
-### The download
-
-Grab the zip from [Releases](https://github.com/CyberM00/wizzo/releases),
-unzip it anywhere, and run **`Wizzo.exe`**. No Python, no `pip`, no
-console -- the board opens in its own window.
-
-About 20 MB to download, 39 MB unpacked. It writes nothing into its own folder:
-settings, the map caches and a log go to `%LOCALAPPDATA%\Wizzo`, so the app
-folder can sit anywhere, including somewhere read-only, and deleting it leaves
-nothing behind but that one directory.
-
-Windows will probably say the publisher is unrecognised. That is because the
-executable is not code-signed, which costs a few hundred dollars a year -- not
-because anything is wrong with it. Choose *More info* then *Run anyway*, or build
-it yourself from source with `python packaging/build.py`.
-
-The window is the same board a browser shows, and the server is still running
-behind it, so a tablet or phone on the same network can open the address printed
-in `%LOCALAPPDATA%\Wizzo\wizzo.log`. **F11** goes fullscreen in the
-window just as it does in a browser.
-
-### It is reachable from your network
-
-The board serves on all interfaces by default, which is what lets a tablet on the
-same Wi-Fi open it. That also means anyone else on that network can, and what
-they would see is your mission: route, target, loadout, frequencies. On a home
-network that is the point. On a shared or public one it may not be, so bind it to
-the machine only:
-
-```bash
-python wizzo.py --host 127.0.0.1
-```
-
-There is no authentication, and adding some would be pretending the board is
-something it is not. It only ever reads; nothing it serves can change a game file.
-
-### From source
-
 Python **3.10 or newer** -- the code uses `X | None` type syntax throughout. CI
-builds and tests on 3.13.
+tests 3.10 and 3.13 on both Windows and Linux.
 
 ```bash
 pip install -r requirements.txt
@@ -92,13 +63,102 @@ pip install -r requirements.txt
 python wizzo.py
 ```
 
-Then drag the browser window to your second monitor and press **F11**.
+It prints two addresses: one for this machine and one for everything else on the
+network. Open the second on your tablet and press **F11** for fullscreen.
 
-On Windows you can also just double-click **`start-wizzo.bat`**.
+This build never opens a window and never opens a browser. Pass `--browser` if the
+server and the pilot happen to be the same machine and you want one anyway.
 
-Run from source the board serves and opens a browser, as it always has. Pass
-`--window` to get the packaged build's desktop window instead, or `--no-window`
-in a packaged build to go back to a browser.
+### Where it should run
+
+On **the machine with the games on it**. The board reads mission files, chart
+PDFs and the sims' own data straight off disk, so it has to be able to see those
+folders. Running it on a separate box only works if that box can reach the game
+folders over a mount or a share, and then it is the mount you have to get right,
+not the board.
+
+That is worth saying plainly because it is the one thing people get wrong: this is
+not a service you host somewhere and point at your PC. It is a small server that
+sits next to the games and hands out pages.
+
+### Keeping it running
+
+Three ways, depending on where it lives. All of them are the same command with
+something making sure it stays up.
+
+**Windows, as a scheduled task.** The usual case, because that is where the games
+are.
+
+```bash
+powershell -ExecutionPolicy Bypass -File deploy\install-task.ps1
+```
+
+That registers it to start at logon, restart if it falls over, and log to
+`%LOCALAPPDATA%\WizzoServer\wizzo.log`. Task Scheduler does not collect stdout,
+which is why that build logs to a file while the others do not. Remove it with
+`Unregister-ScheduledTask -TaskName "Wizzo Server" -Confirm:$false`.
+
+**Linux, as a systemd service.** Copy [`deploy/wizzo-server.service`](deploy/wizzo-server.service),
+adjust the user and the three paths, then:
+
+```bash
+sudo systemctl enable --now wizzo-server
+```
+
+Logs go to the journal: `journalctl -u wizzo-server -f`.
+
+**In a container.** Only sensible when the games are on storage the container host
+can mount. Edit the three paths in
+[`docker-compose.yml`](docker-compose.yml) and:
+
+```bash
+docker compose up -d
+```
+
+The game folders mount **read-only**, because the board only ever reads and there
+is no reason to give it the power to damage an install. Settings and the chart
+cache go to a named volume; keep that, or the first chart for each theatre gets
+rebuilt after every restart.
+
+### Where it writes
+
+Settings, the terrain-chart cache and the IL-2 name cache go beside the checkout
+by default. Set `WIZZO_STATE_DIR` to move them, which is what the container and
+the systemd unit both do:
+
+```bash
+WIZZO_STATE_DIR=/var/lib/wizzo-server python wizzo.py
+```
+
+Worth setting if the checkout is read-only, owned by another user, or replaced on
+every deploy. Nothing here is precious -- the caches rebuild -- but rebuilding a
+theatre's chart cache is slow enough to notice.
+
+This is a different folder from the desktop build's, so the two can sit on one
+machine without writing over each other. The cost is entering your game folders
+once for each.
+
+### Who else can reach it
+
+The board serves on **every interface** by default. That is the entire point --
+it is what lets the tablet open it -- but it means anyone else on that network can
+too, and what they would see is your mission: route, target, loadout,
+frequencies.
+
+On a home network that is fine. On a shared, work or public one it is not, so bind
+it to the machine only:
+
+```bash
+python wizzo.py --host 127.0.0.1
+```
+
+**There is no authentication, and none is planned.** Adding a password box would
+suggest this is safe to expose to the internet, and it is not: it is a small Flask
+app on a development server, reading files off your gaming PC. If you genuinely
+need it from outside your own network, put it behind a VPN, or behind a reverse
+proxy that terminates TLS and handles auth properly. Do not forward a port to it.
+
+It only ever reads. Nothing it serves can change a game file.
 
 ## Where your games are
 
@@ -114,9 +174,10 @@ a path.
 
 Each row can be pointed at a folder, set back to **Find it** automatically, or
 marked **Not installed** so the board stops looking for a game you do not own.
-Changes take effect immediately; there is nothing to restart. In the downloadable
-app there is a **Browse…** button with a real folder picker -- a browser cannot be
-given one, so there it is a text box.
+Changes take effect immediately; there is nothing to restart. The path is a text
+box here: a browser cannot be handed a folder picker, and a native dialog would
+open on the server's screen where nobody is looking. The
+[desktop build](https://github.com/CyberM00/wizzo) has a real **Browse** button.
 
 A folder is checked before it is accepted, against files the board actually
 reads: `Data\TerrData` for BMS, `Mods\terrains` for DCS, `data\Swf.gtp` for IL-2.
@@ -140,17 +201,17 @@ Other options: `--port` (default 5000), `--host`, `--no-browser`, `--no-update`,
 
 ## Keeping it up to date
 
-**The packaged build tells you, and lets you decide.** On start it asks GitHub
-for the latest release, and if it is newer than what you are running the sidebar
-says so with a link. It does not download or replace anything by itself: swapping
-a running application's own folder is exactly the operation that turns a working
-install into a broken one, and a kneeboard that fails to open before a sortie is
-worse than one that is a version behind.
-
 **A git clone updates itself.** On every start it checks GitHub, fast-forwards the
 working copy if there is something new, and relaunches on the updated version
-before serving anything. Push a change from anywhere -- including Claude Code on
-web from a phone -- and the next launch on the desktop picks it up.
+before serving anything. Push a change from anywhere and the next start picks it
+up. Since this build is a checkout rather than a packaged application, that is the
+whole update mechanism.
+
+**Pass `--no-update` when something else owns the files.** The container and the
+systemd unit both do. An image should be replaced by pulling a new one, and a
+process that rewrites its own checkout while a supervisor watches it is a good way
+to end up with a half-updated tree. In a container the change would be discarded
+at the next restart anyway.
 
 The current version and commit are shown at the bottom of the sidebar.
 
@@ -474,7 +535,6 @@ cannot be picked up as the current mission.
 
 ```
 wizzo.py                  entry point and Flask routes
-start-wizzo.bat       double-click launcher
 bmskb/
   install.py              BMS discovery (registry, env var, drive scan) and encoding handling
   briefing.py             briefing.txt parser
@@ -503,19 +563,22 @@ bmskb/
     weapons.py            payload lookup with honest unknowns
     mission.py            mission reader, route geometry, unit conversion
     source.py             IL-2 payload assembly, career and campaign
-  paths.py                bundled resources vs the writable state folder
-  desktop.py              free-port selection, the native window, folder picker
+  paths.py                resource paths vs the writable state folder, WIZZO_STATE_DIR
+  serving.py              free-port selection, and saying no to a folder picker
   simpaths.py             where each sim is installed, and checking it really is
 templates/index.html      page shell
 static/css, static/js     styling and renderer
-packaging/
-  build.py                builds and zips the double-click package
-  wizzo.spec              PyInstaller spec
-  make_icon.py            renders the .ico from the favicon's own path
+Dockerfile                image for the case where the games are on shared storage
+docker-compose.yml        the three mounts and the state volume
+deploy/
+  wizzo-server.service    systemd unit for a Linux box
+  install-task.ps1        registers a Windows scheduled task
+.github/
+  check_serves.py         CI's proof that it serves on both platforms with no games
 ```
 
-Flask and Pillow to run from source; PyInstaller and pywebview only to build the
-package.
+Flask and Pillow to run it; pytest to test it. Nothing else, and deliberately no
+GUI toolkit -- that is what keeps it working on a headless machine.
 
 ## Theatres other than Korea
 

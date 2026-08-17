@@ -42,8 +42,10 @@ body:
     attributes:
       label: How are you running it
       options:
-        - The packaged Wizzo.exe from Releases
         - From source with python wizzo.py
+        - As a Windows scheduled task
+        - As a systemd service
+        - In the Docker container
     validations:
       required: true
 
@@ -60,8 +62,9 @@ body:
     attributes:
       label: The log
       description: >
-        From `%LOCALAPPDATA%\Wizzo\wizzo.log`. It usually names the file it
-        choked on. Paste the end of it, or the whole thing if it is short.
+        Whatever collects output where you run it: the terminal,
+        `journalctl -u wizzo-server`, `docker logs wizzo-server`, or the file you
+        passed to `--log-file`. Paste the end of it.
       render: text
 
   - type: textarea

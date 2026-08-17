@@ -8,8 +8,9 @@ cannot see your install from here.
 ## Reporting something broken
 
 Open an issue and say which sim, which version, and what the board showed
-instead of what you expected. The log at `%LOCALAPPDATA%\Wizzo\wizzo.log`
-usually names the file it choked on.
+instead of what you expected. Output goes to the terminal, or to the journal
+under systemd, or to `docker logs`; whichever it is, it usually names the file it
+choked on. On a Windows scheduled task it is the file passed to `--log-file`.
 
 If it is a loadout or chart problem, the mission file matters. `.miz` files are
 zips and often small enough to attach. Do check what is in yours first if it
@@ -22,8 +23,8 @@ pip install -r requirements.txt
 python wizzo.py
 ```
 
-Add `-r requirements-build.txt` if you want to build the packaged app or run
-the tests.
+Add `-r requirements-dev.txt` to run the tests. There is no build step and no
+GUI dependency: keeping it that way is what lets it run headless.
 
 ```bash
 python -m pytest

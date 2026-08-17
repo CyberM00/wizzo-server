@@ -1,4 +1,0 @@
-# Only needed to build the double-click package -- not to run the board.
-pyinstaller>=6.0
-pywebview>=5.0
-pytest>=8.0

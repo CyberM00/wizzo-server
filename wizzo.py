@@ -1,11 +1,17 @@
-"""Falcon BMS second-monitor kneeboard.
+"""Wizzo Server: the kneeboard as a plain HTTP server.
 
-Run it, then drag the browser window to your second monitor and press F11.
+Run it on the machine the games are installed on and read the board from
+anything else with a browser -- a tablet on the kneeboard strap, a phone, a
+second PC, the laptop next to the stick.
 
     python wizzo.py
 
-The board reads the briefing BMS exports and rebuilds itself whenever that file
-changes, so committing to a new mission is all it takes to refresh.
+It serves on every interface by default, which is what makes that possible. See
+the README before pointing it at a network you do not control.
+
+This build never opens a window and never opens a browser. For a double-click
+desktop app with the board in its own window, use Wizzo instead:
+https://github.com/CyberM00/wizzo
 """
 
 from __future__ import annotations
@@ -23,8 +29,7 @@ from pathlib import Path
 from flask import Flask, abort, jsonify, render_template, request, send_file
 
 from bmskb import __version__
-from bmskb.desktop import browse_available, browse_for_folder, find_port
-from bmskb.desktop import run as desktop_run
+from bmskb.serving import browse_available, browse_for_folder, find_port
 from bmskb.paths import FROZEN, app_root, state_path
 from bmskb.dcs.install import DcsInstall
 from bmskb.il2.gtp import GtpError
@@ -212,10 +217,12 @@ def api_set_path():
 
 @app.route("/api/browse", methods=["POST"])
 def api_browse():
-    """Open a folder picker, when running in the packaged window.
+    """Kept so the settings page can ask, and be told no.
 
-    A browser cannot be asked to pick a folder and hand back its path, so this
-    only works in the desktop build; the page shows a plain text box otherwise.
+    A browser cannot be asked to pick a folder and hand back its path, and a
+    native dialog would open on the server's screen where nobody is looking. So
+    this build always answers "no picker", and the page shows a plain text box
+    for the path instead. The desktop build is where the dialog works.
     """
     payload = request.get_json(silent=True) or {}
     chosen = browse_for_folder(str(payload.get("title", "Select the game folder")))
@@ -302,17 +309,21 @@ def _lan_address() -> str:
         probe.close()
 
 
-def _start_logging() -> Path | None:
-    """Send console output to a file, since a windowed build has no console.
+def _start_logging(explicit: str = "") -> Path | None:
+    """Leave output on stdout unless a file was asked for.
 
-    Without this, a packaged copy that cannot find a sim -- or cannot bind a
-    port -- fails with nothing to look at. The log is truncated each run so it
-    describes this launch rather than growing forever.
+    systemd, Docker and anything else that supervises a process already collect
+    stdout, so redirecting by default would hide the log inside a file the
+    supervisor never reads. Windows Task Scheduler does not collect it, which is
+    what ``--log-file`` is for. The log is truncated each run so it describes
+    this launch rather than growing without bound.
     """
-    if not FROZEN:
+    target = explicit or os.environ.get("WIZZO_LOG", "")
+    if not target:
         return None
-    path = state_path("wizzo.log")
+    path = Path(target)
     try:
+        path.parent.mkdir(parents=True, exist_ok=True)
         stream = open(path, "w", encoding="utf-8", buffering=1)
     except OSError:
         return None
@@ -324,27 +335,33 @@ def _start_logging() -> Path | None:
 def main() -> int:
     global state, update_info
 
-    log_path = _start_logging()
-
-    parser = argparse.ArgumentParser(description="Falcon BMS second-monitor kneeboard")
+    parser = argparse.ArgumentParser(
+        description="Wizzo Server: the kneeboard as an HTTP server, for reading on another device"
+    )
     parser.add_argument("--host", default="0.0.0.0", help="bind address (default: all interfaces)")
     parser.add_argument("--port", type=int, default=5000, help="port (default: 5000)")
     parser.add_argument("--bms-path", default=None, help="override the BMS install path")
     parser.add_argument("--dcs-path", default=None, help="override the DCS install path")
     parser.add_argument("--il2-path", default=None, help="override the IL-2 install path")
-    parser.add_argument("--no-browser", action="store_true", help="do not open a browser")
+    # A server does not open anything by itself: there may be no desktop
+    # session, and on a machine that has one, a browser window nobody asked for
+    # is noise. --browser is here for the case where the server and the pilot
+    # happen to be the same machine.
     parser.add_argument(
-        "--window",
-        dest="window",
+        "--browser",
         action="store_true",
-        default=None,
-        help="show the board in its own window (the default for the packaged build)",
+        help="open a browser on this machine once the board is serving",
     )
     parser.add_argument(
-        "--no-window",
-        dest="window",
-        action="store_false",
-        help="serve only, and use a browser (the default when run from source)",
+        "--no-browser",
+        action="store_true",
+        help="accepted and ignored; this build never opens a browser unless asked",
+    )
+    parser.add_argument(
+        "--log-file",
+        default="",
+        metavar="PATH",
+        help="write output here instead of stdout (for Windows Task Scheduler)",
     )
     parser.add_argument(
         "--no-update", action="store_true", help="skip the check for a newer version"
@@ -356,7 +373,9 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    print(f"Wizzo {__version__}")
+    log_path = _start_logging(args.log_file)
+
+    print(f"Wizzo Server {__version__}")
     if log_path:
         print(f"  log:     {log_path}")
 
@@ -474,22 +493,9 @@ def main() -> int:
     def serve():
         app.run(host=args.host, port=port, debug=False, threaded=True)
 
-    windowed = args.window if args.window is not None else FROZEN
-    if windowed:
-        print("  Opening the board in its own window.\n")
-        # The server keeps running either way -- the window is a front end to it,
-        # not a replacement, so a tablet can still open the same board.
-        failed = desktop_run(url, f"Wizzo {__version__}", serve, port)
-        if not failed:
-            return 0
-        print(f"  note:    {failed}; opening a browser instead")
-        if not args.no_browser:
-            webbrowser.open(url)
-        serve()
-        return 0
-
-    print("  Drag the window to your second monitor and press F11 for fullscreen.\n")
-    if not args.no_browser:
+    print("  Open that address on the device you want the board on.")
+    print("  F11 puts it fullscreen once it is there.\n")
+    if args.browser:
         webbrowser.open(url)
     serve()
     return 0
