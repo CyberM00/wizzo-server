@@ -494,7 +494,15 @@ def main() -> int:
         app.run(host=args.host, port=port, debug=False, threaded=True)
 
     print("  Open that address on the device you want the board on.")
-    print("  F11 puts it fullscreen once it is there.\n")
+    print("  F11 puts it fullscreen once it is there.")
+    if args.host == "0.0.0.0":
+        # Printed as well as documented, because whoever forwards a port to this
+        # is unlikely to have read the README first. No auth and no TLS: anyone
+        # who reaches the port reads the mission.
+        print("\n  Trusted network only. Anything that can reach this port can")
+        print("  read your mission, and there is no password on it. Do not")
+        print("  forward a port to it; use --host 127.0.0.1 to keep it local.")
+    print()
     if args.browser:
         webbrowser.open(url)
     serve()

@@ -9,6 +9,21 @@ It reads what the sim already writes, pulls in the matching charts, and turns yo
 loadout into an employment reference -- automatically, every time you take a new
 mission.
 
+> ### For your own network only
+>
+> **This is built for a LAN you trust, and nothing else. Do not put it on the
+> internet, and do not forward a port to it.**
+>
+> There is no authentication, no TLS, and no rate limiting, and it runs on Flask's
+> development server. Anyone who can reach the port can read your mission: route,
+> target, loadout, frequencies. That is a deliberate trade for something meant to
+> serve one tablet across the room, not a design that is waiting to be hardened.
+>
+> It serves on every interface by default, because that is what lets the tablet
+> reach it. On a home network that is the point. Anywhere shared, use
+> `--host 127.0.0.1`, and if you genuinely need it from outside, reach your own
+> network first with a VPN. [More detail below](#who-else-can-reach-it).
+
 > ### Looking for the desktop app?
 >
 > **[Wizzo](https://github.com/CyberM00/wizzo)** is the same board packaged as a
@@ -152,13 +167,27 @@ it to the machine only:
 python wizzo.py --host 127.0.0.1
 ```
 
-**There is no authentication, and none is planned.** Adding a password box would
-suggest this is safe to expose to the internet, and it is not: it is a small Flask
-app on a development server, reading files off your gaming PC. If you genuinely
-need it from outside your own network, put it behind a VPN, or behind a reverse
-proxy that terminates TLS and handles auth properly. Do not forward a port to it.
+**There is no authentication, and none is planned.** A password box would suggest
+this is safe to expose to the internet, and it is not. What is actually running is
+Flask's development server, single-process and unhardened, serving files read off
+your gaming PC. It has never been reviewed or tested as something facing a hostile
+network, because it was never meant to.
 
-It only ever reads. Nothing it serves can change a game file.
+So the intended deployment is narrow, and worth stating flatly:
+
+- **Yes:** your own home network, serving your own devices.
+- **Yes:** bound to `127.0.0.1` and reached over a VPN or an SSH tunnel, if you
+  want it while away.
+- **No:** a forwarded port, a public IP, a cloud host, or anything with a
+  hostname strangers can resolve.
+
+If you want it reachable from outside properly, the answer is a VPN into your own
+network, not a change to this. A reverse proxy terminating TLS with real auth in
+front of it is defensible on a network you control, but it is still a development
+server behind that proxy, and you are the one accepting that.
+
+The one comfort: it only ever reads. Nothing it serves can change a game file, so
+the exposure is your mission details rather than your install.
 
 ## Where your games are
 

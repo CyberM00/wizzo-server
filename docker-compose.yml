@@ -13,6 +13,11 @@ services:
     container_name: wizzo-server
     restart: unless-stopped
     ports:
+      # Published on every interface of the host, which is what lets a tablet
+      # reach it. That also means anything routable to this host can, and there
+      # is no password on the board. Keep it on a network you trust, and do not
+      # forward a port to it from a router. For host-only, write
+      # "127.0.0.1:5000:5000" instead.
       - "5000:5000"
     environment:
       # These point at the mount points below, not at host paths. The board
