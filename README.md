@@ -1,619 +1,251 @@
 # Wizzo Server
 
 A kneeboard for **Falcon BMS**, **DCS World** and **IL-2 Sturmovik: Great
-Battles** that runs as a plain HTTP server. Start it on the machine the games are
-installed on, then read the board on whatever you actually want it on: a tablet
-strapped to your leg, a phone, a second PC, the laptop beside the stick.
+Battles**, served over HTTP. Run it on the machine the games are installed on and
+open the board on a tablet, phone or another PC. It reads the files the sim
+writes, matches the charts, and rebuilds when you take a new mission.
 
-It reads what the sim already writes, pulls in the matching charts, and turns your
-loadout into an employment reference -- automatically, every time you take a new
-mission.
+Want a desktop window on the same PC instead? Use
+**[Wizzo](https://github.com/CyberM00/wizzo)**, the packaged Windows app. Both
+read the same files and show the same pages.
 
-> ### For your own network only
->
-> **This is built for a LAN you trust, and nothing else. Do not put it on the
-> internet, and do not forward a port to it.**
->
-> There is no authentication, no TLS, and no rate limiting, and it runs on Flask's
-> development server. Anyone who can reach the port can read your mission: route,
-> target, loadout, frequencies. That is a deliberate trade for something meant to
-> serve one tablet across the room, not a design that is waiting to be hardened.
->
-> It serves on every interface by default, because that is what lets the tablet
-> reach it. On a home network that is the point. Anywhere shared, use
-> `--host 127.0.0.1`, and if you genuinely need it from outside, reach your own
-> network first with a VPN. [More detail below](#who-else-can-reach-it).
-
-> ### Looking for the desktop app?
->
-> **[Wizzo](https://github.com/CyberM00/wizzo)** is the same board packaged as a
-> Windows application: download a zip, run `Wizzo.exe`, and it opens in its own
-> window with no Python and no console. If you fly on one machine and read the
-> board on that same machine's second monitor, that is the one you want.
->
-> This build exists for the other case. It has no window, no installer and no
-> desktop dependencies, and it is happy running headless on a box you never look
-> at directly. Both read the same files and show the same pages.
+> **For a network you trust only.** No authentication, no TLS, no rate limiting,
+> and it runs on Flask's development server. Anyone who can reach the port can
+> read your route, target, loadout and frequencies. Never forward a port to it.
+> See [Who else can reach it](#who-else-can-reach-it).
 
 ![The mission brief](docs/brief.png)
 
 | | |
 |---|---|
 | ![Loadout](docs/loadout.png) | ![Steerpoints](docs/steer.png) |
-| **Loadout** -- every station, with employment detail | **Steer** -- the full route with times, headings and altitudes |
-
-![The theatre chart with the flight plan on it](docs/maps.png)
-
-*DCS's own aeronautical chart for the terrain, cropped to the mission, with the
-route, numbered waypoints, airfields and bullseye drawn on it.*
-
-## Which sim it shows
-
-The board opens on a **sim chooser**: one card per sim showing whether it was
-found, which mission it would read, when that was written, and which is newest.
-Click one and it pins the board to that sim and goes straight to the brief. `H`
-returns to the chooser at any time; the board pages keep their `1`-`8` shortcuts.
-
-The chooser reads file stats only, never parsing a mission, so opening it is
-instant regardless of how many sims you have installed.
-
-If you would rather the board follow whichever sim wrote a mission most recently,
-press the button below the nav until it reads `(auto)`. It cycles
-auto → BMS → DCS → IL-2.
-
-The three sims expose very different amounts of data, so what each page shows
-differs. See [DCS support](#dcs-support) and [IL-2 support](#il-2-support) for
-exactly what carries over.
+| **Loadout** | **Steer** |
 
 ## Running it
 
-Python **3.10 or newer** -- the code uses `X | None` type syntax throughout. CI
-tests 3.10 and 3.13 on both Windows and Linux.
+Requires Python **3.10+** (CI tests 3.10 and 3.13 on Windows and Linux).
 
 ```bash
 pip install -r requirements.txt
-```
-
-```bash
 python wizzo.py
 ```
 
-It prints two addresses: one for this machine and one for everything else on the
-network. Open the second on your tablet and press **F11** for fullscreen.
+It prints a local address and a LAN address. Open the LAN one on your tablet and
+press **F11** for fullscreen. It never opens a browser unless you pass `--browser`.
 
-This build never opens a window and never opens a browser. Pass `--browser` if the
-server and the pilot happen to be the same machine and you want one anyway.
+Run it **on the machine with the games**: it reads mission files, chart PDFs and
+sim data straight off disk. A separate box only works if it can see the game
+folders over a mount or share.
 
-### Where it should run
+### Options
 
-On **the machine with the games on it**. The board reads mission files, chart
-PDFs and the sims' own data straight off disk, so it has to be able to see those
-folders. Running it on a separate box only works if that box can reach the game
-folders over a mount or a share, and then it is the mount you have to get right,
-not the board.
+| Option | Effect |
+|---|---|
+| `--host` | Bind address (default `0.0.0.0`, all interfaces) |
+| `--port` | Port (default `5000`) |
+| `--bms-path`, `--dcs-path`, `--il2-path` | Override a game folder |
+| `--browser` | Open a browser on this machine once serving |
+| `--no-browser` | Accepted and ignored |
+| `--log-file PATH` | Write output to a file instead of stdout (also `WIZZO_LOG`) |
+| `--no-update` | Skip the self-update check |
+| `--check-update` | Report whether an update is waiting, then exit |
 
-That is worth saying plainly because it is the one thing people get wrong: this is
-not a service you host somewhere and point at your PC. It is a small server that
-sits next to the games and hands out pages.
+| Environment variable | Effect |
+|---|---|
+| `BMS_PATH`, `DCS_PATH`, `IL2_PATH` | Game folders |
+| `WIZZO_STATE_DIR` | Where settings and caches are written (default: beside the checkout) |
+| `WIZZO_LOG` | Same as `--log-file` |
 
-### Keeping it running
-
-Three ways, depending on where it lives. All of them are the same command with
-something making sure it stays up.
-
-**Windows, as a scheduled task.** The usual case, because that is where the games
-are.
-
-```bash
-powershell -ExecutionPolicy Bypass -File deploy\install-task.ps1
-```
-
-That registers it to start at logon, restart if it falls over, and log to
-`%LOCALAPPDATA%\WizzoServer\wizzo.log`. Task Scheduler does not collect stdout,
-which is why that build logs to a file while the others do not. Remove it with
-`Unregister-ScheduledTask -TaskName "Wizzo Server" -Confirm:$false`.
-
-**Linux, as a systemd service.** Copy [`deploy/wizzo-server.service`](deploy/wizzo-server.service),
-adjust the user and the three paths, then:
-
-```bash
-sudo systemctl enable --now wizzo-server
-```
-
-Logs go to the journal: `journalctl -u wizzo-server -f`.
-
-**In a container.** Only sensible when the games are on storage the container host
-can mount. Edit the three paths in
-[`docker-compose.yml`](docker-compose.yml) and:
-
-```bash
-docker compose up -d
-```
-
-The game folders mount **read-only**, because the board only ever reads and there
-is no reason to give it the power to damage an install. Settings and the chart
-cache go to a named volume; keep that, or the first chart for each theatre gets
-rebuilt after every restart.
-
-### Where it writes
-
-Settings, the terrain-chart cache and the IL-2 name cache go beside the checkout
-by default. Set `WIZZO_STATE_DIR` to move them, which is what the container and
-the systemd unit both do:
+Set `WIZZO_STATE_DIR` if the checkout is read-only or replaced on deploy. The
+caches rebuild, but a theatre's chart cache is slow to rebuild.
 
 ```bash
 WIZZO_STATE_DIR=/var/lib/wizzo-server python wizzo.py
 ```
 
-Worth setting if the checkout is read-only, owned by another user, or replaced on
-every deploy. Nothing here is precious -- the caches rebuild -- but rebuilding a
-theatre's chart cache is slow enough to notice.
+### Keeping it running
 
-This is a different folder from the desktop build's, so the two can sit on one
-machine without writing over each other. The cost is entering your game folders
-once for each.
+**Windows scheduled task** (starts at logon, restarts on failure, logs to
+`%LOCALAPPDATA%\WizzoServer\wizzo.log`):
+
+```bash
+powershell -ExecutionPolicy Bypass -File deploy\install-task.ps1
+```
+
+Remove it with `Unregister-ScheduledTask -TaskName "Wizzo Server" -Confirm:$false`.
+
+**Linux systemd.** Copy [`deploy/wizzo-server.service`](deploy/wizzo-server.service),
+adjust the user and the three paths, then:
+
+```bash
+sudo systemctl enable --now wizzo-server
+journalctl -u wizzo-server -f
+```
+
+**Docker** (only if the games are on storage the host can mount). Edit the three
+paths in [`docker-compose.yml`](docker-compose.yml), then:
+
+```bash
+docker compose up -d
+```
+
+Game folders mount read-only. Settings and the chart cache live in a named
+volume; keep it, or each theatre's chart is rebuilt after every restart.
+
+The systemd unit and the container both run with `--no-update` and set
+`WIZZO_STATE_DIR`.
 
 ### Who else can reach it
 
-The board serves on **every interface** by default. That is the entire point --
-it is what lets the tablet open it -- but it means anyone else on that network can
-too, and what they would see is your mission: route, target, loadout,
-frequencies.
-
-On a home network that is fine. On a shared, work or public one it is not, so bind
-it to the machine only:
+By default it serves on every interface, so anyone on the network can read your
+mission. On a shared, work or public network, bind it to this machine:
 
 ```bash
 python wizzo.py --host 127.0.0.1
 ```
 
-**There is no authentication, and none is planned.** A password box would suggest
-this is safe to expose to the internet, and it is not. What is actually running is
-Flask's development server, single-process and unhardened, serving files read off
-your gaming PC. It has never been reviewed or tested as something facing a hostile
-network, because it was never meant to.
+- **Yes:** your own home network.
+- **Yes:** bound to `127.0.0.1` and reached over a VPN or SSH tunnel.
+- **No:** a forwarded port, a public IP, a cloud host.
 
-So the intended deployment is narrow, and worth stating flatly:
+No authentication is planned. It only ever reads; it cannot change game files.
 
-- **Yes:** your own home network, serving your own devices.
-- **Yes:** bound to `127.0.0.1` and reached over a VPN or an SSH tunnel, if you
-  want it while away.
-- **No:** a forwarded port, a public IP, a cloud host, or anything with a
-  hostname strangers can resolve.
+## Game folders
 
-If you want it reachable from outside properly, the answer is a VPN into your own
-network, not a change to this. A reverse proxy terminating TLS with real auth in
-front of it is defensible on a network you control, but it is still a development
-server behind that proxy, and you are the one accepting that.
+All three sims are found automatically (BMS and DCS from the registry, IL-2 from
+Steam's library list, then a scan of the usual folders).
 
-The one comfort: it only ever reads. Nothing it serves can change a game file, so
-the exposure is your mission details rather than your install.
+If one is missed, the **Game folders** panel appears on first run, and later under
+**Change game folders** on the Home page. Each row takes a path, **Find it**
+(automatic) or **Not installed**. Changes apply immediately. Paths are typed (no
+folder picker in this build).
 
-## Where your games are
+A folder is accepted only if it contains `Data\TerrData` (BMS),
+`Mods\terrains` (DCS) or `data\Swf.gtp` (IL-2).
 
-All three are found automatically -- BMS from the registry, DCS from the registry,
-IL-2 from Steam's own library list, each falling back to a scan of the usual
-folders. Most people never have to think about it.
-
-When that misses, the board asks. The first time it runs it shows a **Game
-folders** panel listing what it found, what it did not, and a box for each one.
-After that the panel is behind **Change game folders** on the Home page, and it
-reappears by itself if nothing at all was found -- an empty board is almost always
-a path.
-
-Each row can be pointed at a folder, set back to **Find it** automatically, or
-marked **Not installed** so the board stops looking for a game you do not own.
-Changes take effect immediately; there is nothing to restart. The path is a text
-box here: a browser cannot be handed a folder picker, and a native dialog would
-open on the server's screen where nobody is looking. The
-[desktop build](https://github.com/CyberM00/wizzo) has a real **Browse** button.
-
-A folder is checked before it is accepted, against files the board actually
-reads: `Data\TerrData` for BMS, `Mods\terrains` for DCS, `data\Swf.gtp` for IL-2.
-Pointing at the wrong game is rejected with the reason rather than accepted and
-turned into an empty board -- the obvious markers (`Data`, `bin`, `data`) are
-shared by all three, and checking those accepted a DCS folder as BMS and accepted
-IL-2 Sturmovik 1946, a different game from 2006, as IL-2 Great Battles.
-
-From the command line, and taking priority over anything saved:
+Priority: command line, environment, saved setting, automatic discovery.
 
 ```bash
 python wizzo.py --bms-path "D:\Falcon BMS 4.38"
 ```
 
-`--dcs-path` and `--il2-path` do the same, as do the `BMS_PATH`, `DCS_PATH` and
-`IL2_PATH` environment variables. Order is command line, environment, what you
-saved in the board, then automatic discovery.
+## Updates
 
-Other options: `--port` (default 5000), `--host`, `--no-browser`, `--no-update`,
-`--check-update` (report whether an update is waiting, then exit).
+A **git clone** updates itself on every start: it fast-forwards from GitHub and
+relaunches before serving. It skips the update, and says why, when there are
+uncommitted changes, unpushed commits, or GitHub is unreachable. Only fast-forward
+pulls are done. A copied (not cloned) folder shows `not auto-updating`.
 
-## Keeping it up to date
+If an update changes `requirements.txt`, run `pip install -r requirements.txt`
+again. The version and commit are shown at the bottom of the sidebar.
 
-**A git clone updates itself.** On every start it checks GitHub, fast-forwards the
-working copy if there is something new, and relaunches on the updated version
-before serving anything. Push a change from anywhere and the next start picks it
-up. Since this build is a checkout rather than a packaged application, that is the
-whole update mechanism.
+## Using the board
 
-**Pass `--no-update` when something else owns the files.** The container and the
-systemd unit both do. An image should be replaced by pulling a new one, and a
-process that rewrites its own checkout while a supervisor watches it is a good way
-to end up with a half-updated tree. In a container the change would be discarded
-at the next restart anyway.
-
-The current version and commit are shown at the bottom of the sidebar.
-
-This only works if the folder is a **git clone**. If you copied the files rather
-than cloning, there is no remote to update from; the sidebar will say
-`not auto-updating`.
-
-Updating is deliberately cautious and never destructive. It is skipped, with the
-reason printed, when:
-
-- there are uncommitted changes in the working copy -- your edits are never touched
-- there are local commits that were not pushed, so a fast-forward is impossible
-- GitHub is unreachable -- the board runs on what it has
-
-Only fast-forward pulls are performed, so an update cannot rewrite history,
-discard a change, or leave a merge conflict behind. Skip the check entirely with
-`--no-update`.
-
-If an update changes `requirements.txt`, the console says so and you should run
-`pip install -r requirements.txt` again.
-
-## Pages
+The board opens on a **sim chooser** showing each sim's status and current
+mission. Click one to pin the board to it, or cycle the button under the nav to
+`(auto)` to follow whichever sim wrote a mission most recently. The board checks
+for a new mission every two seconds.
 
 | Page | Contents |
 |---|---|
-| **Home** | The sim chooser -- status, current mission and timestamp for each sim |
-| **Brief** | Flight, package, time on target, target, situation, package elements, roster, ROE, emergency procedures |
-| **Aircraft** | IL-2: performance limits, engine modes, temperature limits and recommended control settings, from the sim's own data. BMS and DCS: their aircraft manuals, matched to your airframe |
-| **Loadout** | Your stores with weights, missile ranges and expandable employment detail; laser-code panel |
-| **Steer** | Full steerpoint table -- time, distance, heading, CAS, altitude, action, formation |
-| **Comms** | Comm ladder alongside the actual UHF/VHF preset table, plus IFF and Link 16 |
-| **Threats** | Air and surface threat analysis, support assets with TACAN channels |
+| **Home** | Sim chooser |
+| **Brief** | Flight, package, TOT, target, situation, roster, ROE, emergency procedures |
+| **Loadout** | Stores with weights, missile ranges and employment detail; laser-code panel |
+| **Aircraft** | IL-2: limits, engine modes and settings from game data. BMS/DCS: the aircraft manual |
+| **Steer** | Steerpoint table: time, distance, heading, CAS, altitude, action, formation |
+| **Comms** | Comm ladder, UHF/VHF presets, IFF, Link 16 |
+| **Threats** | Air and surface threats, support assets with TACAN channels |
 | **Weather** | Conditions at takeoff, target and landing |
-| **Charts** | Approach plates auto-selected for your departure, recovery, alternate and target fields; all 89 KTO airfields browsable |
-| **Maps** | BMS: theatre maps. DCS: the sim's own raster aeronautical chart for your terrain, cropped to the mission, with your route, waypoints, airfields and bullseye on it. IL-2: the sim's own planner map with your route, waypoints and airfields drawn on it |
+| **Charts** | Approach plates for departure, recovery, alternate and target fields; all KTO airfields browsable |
+| **Maps** | BMS theatre maps; DCS and IL-2 charts with your route drawn on |
 
-Keys `1`-`9` switch pages, `H` opens the sim chooser. `R` forces a reload. `T`
-switches theme.
+| Key | Action |
+|---|---|
+| `1`-`9` | Switch page |
+| `H` | Sim chooser |
+| `R` | Force reload |
+| `T` | Toggle theme (Amber night / Paper day), stored per device |
 
-On a portrait screen the nav moves to the top so the full width goes to content,
-the stat grids drop to two columns, and the chart viewer takes most of the
-remaining height -- approach plates are portrait, so a tall screen suits them.
+Portrait screens get a top nav and a taller chart viewer.
 
-## Themes
+## What each sim provides
 
-Two palettes, toggled with the button under the nav or the `T` key:
-
-- **Amber night** -- the default dark cockpit scheme.
-- **Paper day** -- a light scheme for a lit room. Worth switching to when you are
-  reading charts: the approach plates are white PDFs, so on the dark theme every
-  chart is a bright rectangle in a dark frame.
-
-The choice is stored per device in the browser, so a second monitor in a dark
-room and a tablet in a lit one can each keep their own. It is applied before the
-stylesheet paints, so a night-theme board never flashes white on load.
-
-## How it updates
-
-The board polls the modification time of `briefing.txt` every two seconds and
-rebuilds when BMS rewrites it. Commit to a new mission and the board follows --
-nothing to click.
-
-## Where the data comes from
-
-Everything is read live from your own install; nothing is bundled or cached.
+### BMS
 
 | Data | Source |
 |---|---|
-| Mission brief, steerpoints, comms, IFF, Link 16, weather, ordnance | `User\Briefings\briefing.txt` |
-| UHF/VHF radio presets | `User\Briefings\dtc_comm.txt` |
-| Weapon weights and missile ranges | `Data\TerrData\Objects\Falcon4_WCD.xml` |
-| Approach plates and airfield diagrams | `Docs\03 KTO Charts\` |
+| Brief, steerpoints, comms, IFF, Link 16, weather, ordnance | `User\Briefings\briefing.txt` |
+| UHF/VHF presets | `User\Briefings\dtc_comm.txt` |
+| Weapon weights, missile ranges | `Data\TerrData\Objects\Falcon4_WCD.xml` |
+| Approach plates, airfield diagrams | `Docs\03 KTO Charts\` |
 | Theatre maps | `Docs\05 Maps\` |
 | Employment guidance, fuzing, laser applicability | `bmskb/data/f16_stores.json` (curated) |
 
-Charts are matched to your mission by ICAO code and airfield name -- the
-departure, recovery and alternate fields come from the comm ladder and emergency
-procedures, and the target field from the package mission line.
+- Laser codes are entered by hand (BMS does not export them), validated as `1xyz`
+  with each digit 1-8.
+- Bomb ranges and guidance types are not shown from game data (WCD values are
+  placeholders); the curated library covers them.
+- Radio presets are flagged as stale if `dtc_comm.txt` and `briefing.txt` differ
+  by more than five minutes.
+- Tank weights are dry weights.
+- Other theatres work if their `Docs` tree follows the same layout.
+- Employment notes are planning guidance, not certified release tables.
 
-## Things worth knowing
+### DCS support
 
-These are deliberate choices, not gaps waiting to be filled.
+Read from the mission `.miz`.
 
-**Laser codes are entered by hand.** BMS sets them in the in-game DTC and does
-not write them to any exported file, so there is nothing to read. The laser panel
-is a reminder of what you set, validated against BMS's rules (`1xyz`, where each
-of `x`, `y`, `z` is 1-8). It does not read the jet. The panel highlights itself
-when your loadout actually contains a laser-guided weapon.
-
-**Missile ranges are game data; bomb ranges are not shown.** `Falcon4_WCD.xml`
-holds a usable maximum range for missiles, which is displayed. For bombs it holds
-a campaign-engine placeholder of 0-2 that has nothing to do with release range,
-so it is suppressed rather than shown as a misleading figure. Bomb delivery
-guidance comes from the curated library instead.
-
-**Guidance types are not derived from the game files.** WCD stores guidance as an
-integer that conflates ballistic bombs and GPS JDAMs under the same value, so any
-label built from it would be wrong. Guidance descriptions come from the curated
-library.
-
-**IFF rotation rows are shown as BMS writes them.** BMS does not always emit the
-same number of values per row, so the rows are not zipped into aligned columns --
-pairing a code against the wrong time block is worse than reading across a row.
-
-**Radio presets are checked for staleness.** `dtc_comm.txt` is written
-independently of `briefing.txt`. If the two timestamps disagree by more than five
-minutes the board says so, because presets from a previous mission are worse than
-none.
-
-**Tank weights are dry weights.** The stores total is airframe-external weight
-from the game files, not a fuel load.
-
-The curated employment notes are planning guidance drawn from the BMS manuals and
-standard Viper procedures. They are a reference, not certified release tables.
-
-## DCS support
-
-DCS exports nothing for external tools -- there is no equivalent of BMS's
-`briefing.txt`. Everything comes out of the mission `.miz`, which is a zip
-containing the mission as a Lua table.
-
-| Page | What DCS gives you |
+| Page | Contents |
 |---|---|
-| **Brief** | Mission briefing text, airframe, task, theatre, date, start time, time on target, plus fuel, flares, chaff and gun state |
-| **Loadout** | Every station with the store on it and full employment detail for stores in the curated library |
-| **Steer** | The full route: waypoint names, altitudes, speeds, ETAs, and computed leg distance and bearing |
-| **Comms** | The aircraft's programmed preset channels, one block per radio, plus tanker and AWACS frequencies |
-| **Weather** | Cloud base and thickness, wind at three altitudes, visibility, temperature, QNH |
-| **Charts** | Kneeboard pages the mission generator embedded in the `.miz` (Retribution adds these; stock missions usually do not) |
-| **Threats** | Nothing -- see below |
-| **Maps** | The terrain's own raster aeronautical chart, cropped to your mission, with the route, numbered waypoints, airfields, your start and bullseye drawn on it |
+| Brief | Briefing text, airframe, task, theatre, date, times, fuel, flares, chaff, gun |
+| Loadout | Every station; employment detail for curated stores |
+| Steer | Route with altitudes, speeds, ETAs, leg distance and bearing |
+| Comms | Preset channels per radio, tanker and AWACS frequencies |
+| Weather | Clouds, wind at three altitudes, visibility, temperature, QNH |
+| Charts | Kneeboard pages embedded in the `.miz` (e.g. by Retribution) |
+| Maps | The terrain's own raster chart (`Mods\terrains\<terrain>\RasterCharts`), cropped to the mission, with route, airfields and bullseye |
+| Threats | Not shown |
 
-### The theatre chart
+- Weapon names are curated for the **F/A-18C, A-10C and AV-8B N/A** only; other
+  stores show their raw CLSID.
+- No weights, ranges or threat picture (DCS provides no reliable source).
+- Wind is converted to "from" direction.
+- Only tanker and AWACS groups are listed as support.
+- Stitched charts are cached in `dcs_map_cache/`. If a chart cannot be placed or
+  is missing, a land/water outline with a graticule is shown instead.
 
-DCS ships real 1:500,000-style aeronautical charts for each terrain -- relief, spot
-elevations, airspace boundaries, labelled coastlines -- as DXT-compressed tiles in
-`Mods\terrains\<terrain>\RasterCharts`. Two things are needed to put a flight plan
-on them, and the terrain files state both.
+### IL-2 support
 
-**Where each tile sits.** `rasterCharts.sup5` is the scene index for the tiles:
-fixed 344-byte records, each carrying a world bounding box as six floats followed
-by the tile's name. Every record in all three installed terrains parses, and the
-boxes agree with a regular grid to the metre. This is read rather than inferred
-for a reason -- Syria's sheets happen to sit on a tidy 262,144 m grid from the
-origin and Caucasus's do not, so anything derived from the tile names would have
-been right on one terrain and wrong on another.
+Career mode is fully supported; scripted DLC campaigns partially (briefing text,
+briefing map and as-flown loadout only). PWCG missions are ignored.
 
-**How mission coordinates map to the world.** `beacons.lua` lists every beacon
-twice over: `position` in world metres and `positionGeo` in latitude and
-longitude. That is enough to solve the projection outright. DCS uses Transverse
-Mercator on WGS 84 at the UTM scale factor 0.9996, with the central meridian of
-the terrain's own UTM zone and a per-terrain false origin:
-
-| Terrain | Central meridian | False northing | False easting | Beacons | Worst residual |
-|---|---|---|---|---|---|
-| Syria | 39°E | −3,879,866 | +282,801 | 151 | 0.07 m |
-| Caucasus | 33°E | −4,998,115 | −99,517 | 164 | 0.79 m |
-| Persian Gulf | 57°E | −2,894,933 | +75,756 | 101 | 0.11 m |
-
-Sub-metre against the sim's own figures, with round-integer offsets and meridians
-exactly on the UTM zone -- an exact match rather than a fit. Nothing is hardcoded:
-each terrain is solved from its own beacon table on load, so a terrain never seen
-here works the same way, and the residual is reported on the page.
-
-The whole theatre is never built. Syria at 32 m per pixel would be 390 megapixels,
-so only the tiles covering the route's bounding box plus a 30 km margin are
-stitched, at the finest resolution that covers the box without going over 44
-megapixels. A typical sortie comes out around 5,000 px square, built in about a
-second and cached in a gitignored `dcs_map_cache/` keyed on the game files' own
-modification times. Stitching never happens while the board is being assembled --
-only when the image is actually requested -- so `/api/state` stays at 5-20 ms warm.
-
-**Placement is checked, not assumed.** Every terrain also ships
-`MissionGenerator\nodesMap.png`, a land-and-water image exactly georeferenced by
-the bounds beside it. After a chart is stitched, its coastline is compared against
-that image where it is placed and at eight positions 20-35 km away, and the result
-is reported on the page. If a displaced position ever wins, the chart is not shown
-again -- the terrain outline is drawn instead and the page says why.
-
-What is *not* done is score the overlap against a fixed threshold. The terrains
-draw their seas quite differently -- Syria's is a solid blue, Caucasus's is nearly
-white -- so the same colour test finds 52% of one and 12% of another, and a fixed
-threshold rejected a Caucasus chart that visibly lands on its own printed airfield
-symbols. Which position wins is a question that survives a mediocre colour test,
-because both sides of the comparison share it. Measured over twelve coastal areas
-across the three terrains, the stated position won every time.
-
-**When there is no chart.** A terrain with no `RasterCharts` folder, no tile index,
-or no tiles covering the route falls back to that same land-and-water image,
-enlarged, with a latitude and longitude graticule, named places from the terrain's
-own `towns.lua`, a scale bar, and bearing and range from bullseye tabulated for
-every steerpoint. The page says which of the two it is showing and why.
-
-### What DCS deliberately does not show, and why
-
-**Weapon names come from a curated library, not the game files.** DCS builds its
-own CLSID-to-name mapping by *executing* Lua at load time, so there is no table
-to read. Three extraction approaches were tried and all rejected: proximity
-matching reached 44% and mislabelled an ALQ-184 as a Soviet recon pod;
-enclosing-block matching reached 35% with conflicting answers; literal
-declaration arguments were accurate but covered only a handful. So names are
-hand-curated for the **F/A-18C, A-10C and AV-8B N/A**. Anything outside that is
-shown as its raw CLSID and flagged as having no reference data -- a wrong weapon
-name on a kneeboard is worse than an unresolved code.
-
-**No weights or ranges.** `Falcon4_WCD.xml` gives BMS trustworthy per-store
-weights and missile ranges. DCS publishes no equivalent, so those fields stay
-empty rather than being invented.
-
-**No threat picture.** A DCS mission lists every unit on the map, but nothing
-marks which are a threat to your route. Building a threat brief from that would
-be invention, not reading.
-
-**Only the airfields the terrain names are labelled on the map.** Airfield
-positions and names come from the `AIRPORT_HOMER` entries in `beacons.lua`, which
-covers 23 of Syria's 76 airfields. The rest exist only in `AirfieldsTaxiways`, as
-per-airfield binary road-network files whose format is not established here, so
-they are left off rather than drawn as unnamed squares in guessed positions. The
-chart itself prints every airfield regardless -- the overlay adds names to the ones
-the sim states, and does not invent the others.
-
-**The chart is shown without a coordinate grid.** In chart mode no graticule or
-place names are drawn, because the chart carries its own and a second set on top
-of them would be two grids to read. The graticule appears only in the fallback,
-where there is no printed one.
-
-**Wind is reported as the direction it comes from.** DCS stores the direction the
-wind blows *toward*, rotated 180° from the convention the Mission Editor
-displays. The board converts it and says "from" in the value so the convention is
-explicit rather than assumed.
-
-**Only tanker and AWACS groups are listed as support.** DCS group tasks do not
-reliably describe what a generated group does -- a BARCAP in the test mission was
-tagged `Transport`. Labelling the rest would be guesswork.
-
-## IL-2 support
-
-IL-2 exports nothing and has no telemetry of any kind -- no shared memory, no UDP
-export. Everything comes from files it leaves on disk.
-
-Career mode is fully supported. Scripted DLC campaigns are partially supported;
-see below.
-
-| Page | What IL-2 gives you |
+| Page | Contents |
 |---|---|
-| **Brief** | Mission title, flight callsign ("Finch 4"), airframe, date, takeoff time, theatre, the complete mission briefing, your flight's pilot roster, and spawn fuel and ammunition |
-| **Loadout** | Every store with the game's own name, and a planned-versus-as-flown comparison |
-| **Steer** | The route: waypoint names, altitudes, commanded speeds, formations, plus computed leg distance and bearing |
-| **Comms** | Callsigns only -- see below |
-| **Weather** | Five wind layers, cloud base and thickness, cloud preset, temperature, pressure, haze, turbulence, sea state. The richest weather of the three sims |
-| **Charts** | Taxi diagrams for your departure and recovery fields, drawn from the mission's own coordinates |
-| **Threats** | Nothing -- see below |
-| **Maps** | Nothing -- IL-2 keeps terrain as packed data, not images |
+| Brief | Title, callsign, airframe, date, takeoff time, briefing, roster, fuel and ammo |
+| Loadout | Store names from the game's own tables; planned vs as-flown |
+| Steer | Route with altitudes, speeds, formations, leg distance and bearing (no ETAs) |
+| Comms | Callsigns only |
+| Weather | Five wind layers, clouds, temperature, pressure, haze, turbulence, sea state |
+| Charts | Taxi diagrams for departure and recovery fields |
+| Maps | The sim's planner map with your route |
+| Threats | Not shown |
 
-### Where the loadout comes from
+- Weapon names are cached in `il2_name_cache.json` and rebuild after a game patch.
+- The as-flown loadout comes from `data\missionReport(...)[0].txt`, which needs
+  `mission_text_log = 1` in `data\startup.cfg` (on by default).
+- Weapon modifications and gun round counts are not shown. Wind direction is shown
+  as the file states it.
 
-Unusually, IL-2's own weapon tables are readable, so store names come from the
-game itself rather than a curated file. The mission's `PayloadId` is an index into
-the aircraft's ammunition list inside `Scripts.gtp`, and the weapon codes in that
-list resolve against the name table in `Swf.gtp`. Both are read directly and cached
-in a gitignored `il2_name_cache.json`, keyed on the archives' size and modification
-time so a game patch rebuilds it automatically. The build takes about 0.15 seconds
-and reads roughly 8 MB of the 1.6 GB involved.
+## Development
 
-Coverage is 99.3% of every loadout string in the game; three drop-tank codes have
-no entry in IL-2's own table and are shown as raw codes.
-
-### Planned versus as flown
-
-**IL-2 never writes your chosen loadout back to the mission file.** One career
-mission here was reused across five sorties with different loadouts each time. The
-mission file therefore holds only what the generator planned.
-
-What you actually took off with is recorded in `data\missionReport(...)[0].txt`,
-which IL-2 writes when a mission starts. The board reads it, checks it really does
-belong to the mission on disk (four tests: the mission it names, its date, its
-time, and that it is not older than the mission file), and says which source it is
-showing. When they disagree, it says so and shows what you flew.
-
-This depends on `mission_text_log = 1` in `data\startup.cfg`, which is on by
-default. When it is off the board says so rather than presenting the planned
-loadout as fact.
-
-### What IL-2 deliberately does not show, and why
-
-**No weapon modifications or gun round counts.** The mission file writes the
-modification bitmask as base-2 digits and the log writes the same value in
-decimal, but which end the digit string starts from is not confirmed -- and bit 0
-is set either way, so a wrong reading would look entirely plausible while
-mislabelling every modification. Likewise, a payload label like `SHKAS-AP-1500`
-carries a number, but whether it is per-gun or a total for the pair is not
-established. Both are extracted and cached, so surfacing them later is a display
-change; neither is displayed on a guess.
-
-**Wind direction is stated without a convention.** The mission file gives a
-direction per altitude layer, but whether it is the direction the wind comes from
-or blows toward is not confirmed, so it is shown as the file states it.
-
-**No frequencies.** IL-2 aircraft of this era have no tunable radio and the mission
-files carry none. Callsigns are resolved against the game's own callsign table;
-the preset, IFF and Link 16 panels are not rendered at all.
-
-**No threat picture.** The mission file places every unit on the map but marks none
-as a threat to your route.
-
-**No estimated times.** IL-2 records no ETA at any waypoint, so the time column is
-blank rather than derived from distance and speed.
-
-**Scripted campaigns are partial.** DLC campaign missions are compiled into
-`.cmpbin` inside `Campaigns.gtp` -- a binary this cannot read -- so there is no
-route, weather or planned loadout for them. What *is* readable beside each mission
-is its briefing text and its briefing map image, and the sortie log still gives the
-as-flown loadout, so the board shows those and says what is missing. This path is
-built from the archive's structure but has not been exercised against a real
-campaign sortie.
-
-**PWCG is out of scope.** Missions under `data\Missions\PWCG` are ignored so they
-cannot be picked up as the current mission.
-
-## Layout
-
-```
-wizzo.py                  entry point and Flask routes
-bmskb/
-  install.py              BMS discovery (registry, env var, drive scan) and encoding handling
-  briefing.py             briefing.txt parser
-  dtc.py                  dtc_comm.txt radio preset parser
-  weapons.py              WCD weapon data joined to the curated library
-  charts.py               chart and map indexing, ICAO matching
-  state.py                source selection, payload assembly, caching, validation
-  selfupdate.py           safe fast-forward self-update on startup
-  data/f16_stores.json    curated F-16 store reference
-  dcs/
-    install.py            DCS discovery and mission listing
-    luaparse.py           parser for the Lua table dialect .miz files use
-    mission.py            .miz reader, unit conversion, route geometry
-    maps.py               terrain projection, raster chart index, stitching, cache
-    weapons.py            CLSID lookup against the curated library
-    source.py             DCS payload assembly
-    data/dcs_stores.json  curated F/A-18C, A-10C and AV-8B store reference
-  il2/
-    install.py            IL-2 discovery, mission and sortie-log listing
-    gtp.py                reader for IL-2's packed .gtp archives
-    missionfile.py        targeted scanner for the mission text format
-    localization.py       UTF-16 text files and the briefing-to-prose converter
-    logs.py               sortie log reader and mission correlation
-    reference.py          callsign and country tables from data\GUI
-    extract.py            weapon-name extraction from the game's archives, cached
-    weapons.py            payload lookup with honest unknowns
-    mission.py            mission reader, route geometry, unit conversion
-    source.py             IL-2 payload assembly, career and campaign
-  paths.py                resource paths vs the writable state folder, WIZZO_STATE_DIR
-  serving.py              free-port selection, and saying no to a folder picker
-  simpaths.py             where each sim is installed, and checking it really is
-templates/index.html      page shell
-static/css, static/js     styling and renderer
-Dockerfile                image for the case where the games are on shared storage
-docker-compose.yml        the three mounts and the state volume
-deploy/
-  wizzo-server.service    systemd unit for a Linux box
-  install-task.ps1        registers a Windows scheduled task
-.github/
-  check_serves.py         CI's proof that it serves on both platforms with no games
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+python -m pytest
 ```
 
-Flask and Pillow to run it; pytest to test it. Nothing else, and deliberately no
-GUI toolkit -- that is what keeps it working on a headless machine.
-
-## Theatres other than Korea
-
-The briefing, loadout, comms and weather pages are theatre-independent. The chart
-and map pages read whatever is in your `Docs` tree, matching on ICAO and airfield
-name, so a theatre that follows the same `Docs` layout works without changes.
+Runtime dependencies are Flask and Pillow only; no GUI toolkit, so it runs
+headless. Entry point is `wizzo.py`; the parsers live in `bmskb/` (`dcs/` and
+`il2/` per sim). See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Support
 
